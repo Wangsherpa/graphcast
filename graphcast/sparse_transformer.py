@@ -74,6 +74,8 @@ class _ModelConfig:
   attn_winit_final_mult: float = 2.0
   # Number of hidden units in the MLP blocks. Defaults to 4 * d_model.
   ffw_hidden: Optional[int] = None
+  # Whether to rematerialize transformer blocks.
+  remat_blocks: bool = False
 
   def __post_init__(self):
     if self.ffw_hidden is None:
@@ -498,6 +500,7 @@ class Transformer(hk.Module):
                block_q_dkv: Optional[int] = None,
                block_kv_dkv: Optional[int] = None,
                block_kv_dkv_compute: Optional[int] = None,
+               remat_blocks: bool = False,
                **kwargs):
     super().__init__(name=name)
 
@@ -552,17 +555,22 @@ class Transformer(hk.Module):
         block_q_dkv=block_q_dkv,
         block_kv_dkv=block_kv_dkv,
         block_kv_dkv_compute=block_kv_dkv_compute,
+        remat_blocks=remat_blocks,
         **kwargs)
 
   def __call__(self, node_features, global_norm_conditioning: jax.Array):
     # node_features expected to have shape (batch, num_nodes, d)
     x = node_features
     for i_layer in range(self._cfg.num_layers):
-      x = Block(cfg=self._cfg, mask=self.mask,
+      block_instance = Block(cfg=self._cfg, mask=self.mask,
                 num_nodes=node_features.shape[1],
                 num_padding_nodes=self.num_padding_nodes,
                 name='block_%02d' % i_layer
-                )(x, global_norm_conditioning=global_norm_conditioning)
+                )
+      if self._cfg.remat_blocks:
+        x = hk.remat(block_instance)(x, global_norm_conditioning=global_norm_conditioning)
+      else:
+        x = block_instance(x, global_norm_conditioning=global_norm_conditioning)
 
     def norm_conditioning_layer(x):
       return mlp_builder.LinearNormConditioning(

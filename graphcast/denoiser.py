@@ -150,6 +150,8 @@ class SparseTransformerConfig:
   ffw_hidden: int = 2048
   # Name for haiku module.
   name: Optional[str] = None
+  # Whether to rematerialize transformer blocks.
+  remat_blocks: bool = False
 
 
 @chex.dataclass(eq=True)
